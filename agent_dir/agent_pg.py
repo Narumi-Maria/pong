@@ -1,14 +1,15 @@
 from agent_dir.agent import Agent
 import numpy as np
-import gym
+#import gym
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from scipy.misc import imsave, imresize
+#from scipy.misc import imsave, imresize
+from PIL import Image
 
-class actor(nn.module):
+class actor(nn.Module):
 
-    def __init__self(self):
+    def __init__(self):
         super().__init__()
         self.nt = nn.Sequential(
             nn.Linear(6400, 256, bias=False),
@@ -27,7 +28,7 @@ class Agent_PG(Agent):
         super(Agent_PG, self).__init__(env)
         self.env=env
         self.reward_history, self.reward_list, self.prob_list, self.label_list=[],[],[],[]
-        self.net=actor()
+        self.net=actor().to('cuda')
         self.opt=optim.Adam(self.net.parameters(),lr=0.0001)
         self.opt.zero_grad()
         self.prev_state=None
@@ -47,13 +48,14 @@ class Agent_PG(Agent):
         p = p.detach().cpu().numpy()
         action = 2 if p[0] > np.random.uniform() else 3  # 2 is up / 3 is down
         label = torch.ones(1) if action == 2 else torch.zeros(1)  # Label is 1 if moving up
-        return action, label
+        return action, label.to('cuda')
 
     def get_prepro_state(self,s):
         s = 0.2126 * s[:, :, 0] + 0.7152 * s[:, :, 1] + 0.0722 * s[:, :, 2]
         s = s.astype(np.uint8)
-        s = imresize(s, (80, 80)).ravel()
-        return torch.tensor(s, dtype=torch.float).unsqueeze(0)  # Return a tensor
+        #s = imresize(s, (80, 80)).ravel()
+        s= np.array(Image.fromarray(s).resize((80,80))).ravel()
+        return torch.tensor(s, dtype=torch.float).unsqueeze(0).to('cuda')  # Return a tensor
 
     def get_po_loss(self,p, l, r):
         # 转list为tensor
@@ -71,15 +73,15 @@ class Agent_PG(Agent):
             run_r = run_r * gamma + r[t]
             dsct_r[t] = run_r
         dsct_r = (dsct_r - np.mean(dsct_r)) / np.std(dsct_r)
-        return torch.tensor(dsct_r, dtype=torch.float)
+        return torch.tensor(dsct_r, dtype=torch.float).to('cuda')
 
     def train(self):
         while True:
-            self.curr_state=self.get_prepro_state(self.curr_state)
+            self.curr_state=self.get_prepro_state(self.curr_state).to('cuda')
             diff_state=self.curr_state-(self.prev_state if self.prev_state is not None else 0)
             self.prev_state=self.curr_state
 
-            prob=self.net(diff_state)
+            prob=self.net(diff_state).to('cuda')
             action,label=self.get_action_label(prob)
             self.label_list.append(label)
             self.prob_list.append(prob)
